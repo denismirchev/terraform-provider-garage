@@ -14,14 +14,16 @@ func dataSourceGarageKey() *schema.Resource {
 		ReadContext: dataSourceGarageKeyRead,
 		Schema: map[string]*schema.Schema{
 			"id": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "The exact access key ID to look up",
+				Type:          schema.TypeString,
+				Optional:      true,
+				Description:   "The exact access key ID to look up",
+				ConflictsWith: []string{"search"},
 			},
 			"search": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "Partial key ID or name to search for",
+				Type:          schema.TypeString,
+				Optional:      true,
+				Description:   "Partial key ID or name to search for",
+				ConflictsWith: []string{"id"},
 			},
 			"access_key_id": {
 				Type:        schema.TypeString,
