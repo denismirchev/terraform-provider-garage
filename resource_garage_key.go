@@ -49,6 +49,11 @@ func resourceGarageKeyCreate(ctx context.Context, d *schema.ResourceData, m inte
 
 	keyBody := garage.NewUpdateKeyRequestBody()
 	keyBody.SetName(name)
+	if d.Get("allow_create_bucket").(bool) {
+		keyPerm := garage.NewKeyPerm()
+		keyPerm.SetCreateBucket(true)
+		keyBody.SetAllow(*keyPerm)
+	}
 
 	key, resp, err := client.Client.AccessKeyAPI.CreateKey(ctx).Body(*keyBody).Execute()
 	if err != nil {
@@ -63,23 +68,6 @@ func resourceGarageKeyCreate(ctx context.Context, d *schema.ResourceData, m inte
 	d.SetId(key.AccessKeyId)
 	if err := d.Set("access_key_id", key.AccessKeyId); err != nil {
 		return diag.FromErr(err)
-	}
-	if d.Get("allow_create_bucket").(bool) {
-		keyPerm := garage.NewKeyPerm()
-		keyPerm.SetCreateBucket(true)
-
-		updateBody := garage.NewUpdateKeyRequestBody()
-		updateBody.SetAllow(*keyPerm)
-
-		_, resp, err := client.Client.AccessKeyAPI.UpdateKey(ctx).Id(key.AccessKeyId).UpdateKeyRequestBody(*updateBody).Execute()
-		if err != nil {
-			return diag.FromErr(fmt.Errorf("failed to update key permissions: %w", err))
-		}
-		defer func() {
-			if resp.Body != nil {
-				_ = resp.Body.Close()
-			}
-		}()
 	}
 	if key.SecretAccessKey.IsSet() {
 		secret := key.SecretAccessKey.Get()
@@ -130,6 +118,9 @@ func resourceGarageKeyUpdate(ctx context.Context, d *schema.ResourceData, m inte
 	keyID := d.Id()
 
 	updateBody := garage.NewUpdateKeyRequestBody()
+	if !d.HasChange("name") && !d.HasChange("allow_create_bucket") {
+		return resourceGarageKeyRead(ctx, d, m)
+	}
 
 	if d.HasChange("name") {
 		name := d.Get("name").(string)
@@ -138,8 +129,12 @@ func resourceGarageKeyUpdate(ctx context.Context, d *schema.ResourceData, m inte
 	if d.HasChange("allow_create_bucket") {
 		allow := d.Get("allow_create_bucket").(bool)
 		perm := garage.NewKeyPerm()
-		perm.SetCreateBucket(allow)
-		updateBody.SetAllow(*perm)
+		perm.SetCreateBucket(true)
+		if allow {
+			updateBody.SetAllow(*perm)
+		} else {
+			updateBody.SetDeny(*perm)
+		}
 	}
 
 	_, resp, err := client.Client.AccessKeyAPI.UpdateKey(ctx).Id(keyID).UpdateKeyRequestBody(*updateBody).Execute()
@@ -161,6 +156,10 @@ func resourceGarageKeyDelete(ctx context.Context, d *schema.ResourceData, m inte
 
 	resp, err := client.Client.AccessKeyAPI.DeleteKey(ctx).Id(keyID).Execute()
 	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(fmt.Errorf("failed to delete key: %w", err))
 	}
 	defer func() {
