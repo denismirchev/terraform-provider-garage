@@ -55,6 +55,13 @@ func dataSourceGarageBucket() *schema.Resource {
 
 func dataSourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
+	if _, idOk := d.GetOk("id"); !idOk {
+		if _, aliasOk := d.GetOk("global_alias"); !aliasOk {
+			if _, searchOk := d.GetOk("search"); !searchOk {
+				return diag.FromErr(fmt.Errorf("one of \"id\", \"global_alias\", or \"search\" must be specified"))
+			}
+		}
+	}
 
 	req := client.Client.BucketAPI.GetBucketInfo(ctx)
 	if id, ok := d.GetOk("id"); ok {
@@ -97,11 +104,6 @@ func dataSourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m i
 	}
 	if err := d.Set("website_access", bucket.WebsiteAccess); err != nil {
 		return diag.FromErr(err)
-	}
-	if len(bucket.GlobalAliases) > 0 {
-		if err := d.Set("global_alias", bucket.GlobalAliases[0]); err != nil {
-			return diag.FromErr(err)
-		}
 	}
 
 	return nil

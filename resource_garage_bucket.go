@@ -142,8 +142,7 @@ func resourceGarageBucketCreate(ctx context.Context, d *schema.ResourceData, m i
 
 	if wc, ok := d.GetOk("website_config"); ok && len(wc.([]interface{})) > 0 {
 		wcMap := wc.([]interface{})[0].(map[string]interface{})
-		enabled := wcMap["enabled"].(bool)
-		websiteAccess := garage.NewUpdateBucketWebsiteAccess(enabled)
+		websiteAccess := garage.NewUpdateBucketWebsiteAccess(wcMap["enabled"].(bool))
 		if idx := wcMap["index_document"].(string); idx != "" {
 			websiteAccess.SetIndexDocument(idx)
 		}
@@ -236,24 +235,28 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 		}
 	}
 
-	websiteConfig := bucket.GetWebsiteConfig()
-	if err := d.Set("website_config", []map[string]interface{}{
-		{
-			"enabled":        bucket.WebsiteAccess,
-			"index_document": (&websiteConfig).GetIndexDocument(),
-			"error_document": (&websiteConfig).GetErrorDocument(),
-		},
-	}); err != nil {
-		return diag.FromErr(err)
+	if _, ok := d.GetOk("website_config"); ok {
+		websiteConfig := bucket.GetWebsiteConfig()
+		if err := d.Set("website_config", []map[string]interface{}{
+			{
+				"enabled":        bucket.WebsiteAccess,
+				"index_document": (&websiteConfig).GetIndexDocument(),
+				"error_document": (&websiteConfig).GetErrorDocument(),
+			},
+		}); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
-	if err := d.Set("quotas", []map[string]interface{}{
-		{
-			"max_size":    int(bucket.Quotas.GetMaxSize()),
-			"max_objects": int(bucket.Quotas.GetMaxObjects()),
-		},
-	}); err != nil {
-		return diag.FromErr(err)
+	if _, ok := d.GetOk("quotas"); ok {
+		if err := d.Set("quotas", []map[string]interface{}{
+			{
+				"max_size":    int(bucket.Quotas.GetMaxSize()),
+				"max_objects": int(bucket.Quotas.GetMaxObjects()),
+			},
+		}); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	return nil
@@ -280,15 +283,23 @@ func resourceGarageBucketUpdate(ctx context.Context, d *schema.ResourceData, m i
 
 	if d.HasChange("website_config") {
 		websiteAccess := garage.NewUpdateBucketWebsiteAccess(false)
-		if wc := d.Get("website_config").([]interface{}); len(wc) > 0 {
+		wc := d.Get("website_config").([]interface{})
+		if len(wc) > 0 {
 			wcMap := wc[0].(map[string]interface{})
-			websiteAccess = garage.NewUpdateBucketWebsiteAccess(wcMap["enabled"].(bool))
+			websiteAccess.SetEnabled(wcMap["enabled"].(bool))
 			if idx := wcMap["index_document"].(string); idx != "" {
 				websiteAccess.SetIndexDocument(idx)
+			} else {
+				websiteAccess.SetIndexDocumentNil()
 			}
 			if errDoc := wcMap["error_document"].(string); errDoc != "" {
 				websiteAccess.SetErrorDocument(errDoc)
+			} else {
+				websiteAccess.SetErrorDocumentNil()
 			}
+		} else {
+			websiteAccess.SetIndexDocumentNil()
+			websiteAccess.SetErrorDocumentNil()
 		}
 		updateBody := garage.NewUpdateBucketRequestBody()
 		updateBody.SetWebsiteAccess(*websiteAccess)
@@ -305,18 +316,25 @@ func resourceGarageBucketUpdate(ctx context.Context, d *schema.ResourceData, m i
 	}
 
 	if d.HasChange("quotas") {
-		quotas := garage.NewApiBucketQuotas()
-		if q := d.Get("quotas").([]interface{}); len(q) > 0 {
+		q := d.Get("quotas").([]interface{})
+		updateBody := garage.NewUpdateBucketRequestBody()
+		if len(q) > 0 {
 			qMap := q[0].(map[string]interface{})
+			quotas := garage.NewApiBucketQuotas()
 			if maxSz := qMap["max_size"].(int); maxSz > 0 {
 				quotas.SetMaxSize(int64(maxSz))
+			} else {
+				quotas.SetMaxSizeNil()
 			}
 			if maxObj := qMap["max_objects"].(int); maxObj > 0 {
 				quotas.SetMaxObjects(int64(maxObj))
+			} else {
+				quotas.SetMaxObjectsNil()
 			}
+			updateBody.SetQuotas(*quotas)
+		} else {
+			updateBody.SetQuotasNil()
 		}
-		updateBody := garage.NewUpdateBucketRequestBody()
-		updateBody.SetQuotas(*quotas)
 
 		_, resp, err := client.Client.BucketAPI.UpdateBucket(ctx).Id(bucketID).UpdateBucketRequestBody(*updateBody).Execute()
 		if err != nil {
@@ -338,6 +356,10 @@ func resourceGarageBucketDelete(ctx context.Context, d *schema.ResourceData, m i
 
 	resp, err := client.Client.BucketAPI.DeleteBucket(ctx).Id(bucketID).Execute()
 	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(fmt.Errorf("failed to delete bucket: %w", err))
 	}
 	defer func() {
