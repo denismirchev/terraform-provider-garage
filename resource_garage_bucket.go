@@ -186,7 +186,7 @@ func resourceGarageBucketCreate(ctx context.Context, d *schema.ResourceData, m i
 		}()
 	}
 
-	return nil
+	return resourceGarageBucketRead(ctx, d, m)
 }
 
 func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -220,16 +220,22 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 		if err := d.Set("global_alias", bucket.GlobalAliases[0]); err != nil {
 			return diag.FromErr(err)
 		}
+	} else {
+		if err := d.Set("global_alias", ""); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	// Read expiration policy if it exists
 	expirationDays, err := getBucketLifecyclePolicy(ctx, client, bucket.Id)
-	if err == nil && expirationDays > 0 {
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to read expiration policy: %w", err))
+	}
+	if expirationDays > 0 {
 		if err := d.Set("expiration_days", expirationDays); err != nil {
 			return diag.FromErr(err)
 		}
-	} else if d.HasChange("expiration_days") {
-		// If expiration_days was removed, clear it
+	} else {
 		if err := d.Set("expiration_days", 0); err != nil {
 			return diag.FromErr(err)
 		}
