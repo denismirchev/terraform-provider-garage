@@ -14,19 +14,22 @@ func dataSourceGarageBucket() *schema.Resource {
 		ReadContext: dataSourceGarageBucketRead,
 		Schema: map[string]*schema.Schema{
 			"id": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "The exact bucket ID to look up",
+				Type:          schema.TypeString,
+				Optional:      true,
+				Description:   "The exact bucket ID to look up",
+				ConflictsWith: []string{"global_alias", "search"},
 			},
 			"global_alias": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "Global alias of the bucket to look up",
+				Type:          schema.TypeString,
+				Optional:      true,
+				Description:   "Global alias of the bucket to look up",
+				ConflictsWith: []string{"id", "search"},
 			},
 			"search": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "Partial bucket ID or alias to search for",
+				Type:          schema.TypeString,
+				Optional:      true,
+				Description:   "Partial bucket ID or alias to search for",
+				ConflictsWith: []string{"id", "global_alias"},
 			},
 			"global_aliases": {
 				Type:        schema.TypeList,
