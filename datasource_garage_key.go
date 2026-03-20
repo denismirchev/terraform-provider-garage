@@ -49,6 +49,11 @@ func dataSourceGarageKey() *schema.Resource {
 
 func dataSourceGarageKeyRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
+	if _, idOk := d.GetOk("id"); !idOk {
+		if _, searchOk := d.GetOk("search"); !searchOk {
+			return diag.FromErr(fmt.Errorf("one of \"id\" or \"search\" must be specified"))
+		}
+	}
 
 	req := client.Client.AccessKeyAPI.GetKeyInfo(ctx)
 	if id, ok := d.GetOk("id"); ok {
