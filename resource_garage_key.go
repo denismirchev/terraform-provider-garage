@@ -22,6 +22,12 @@ func resourceGarageKey() *schema.Resource {
 				Required:    true,
 				Description: "The name of the access key",
 			},
+			"allow_create_bucket": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "Whether the key is allowed to create buckets",
+			},
 			"access_key_id": {
 				Type:        schema.TypeString,
 				Computed:    true,
@@ -57,6 +63,23 @@ func resourceGarageKeyCreate(ctx context.Context, d *schema.ResourceData, m inte
 	d.SetId(key.AccessKeyId)
 	if err := d.Set("access_key_id", key.AccessKeyId); err != nil {
 		return diag.FromErr(err)
+	}
+	if d.Get("allow_create_bucket").(bool) {
+		keyPerm := garage.NewKeyPerm()
+		keyPerm.SetCreateBucket(true)
+
+		updateBody := garage.NewUpdateKeyRequestBody()
+		updateBody.SetAllow(*keyPerm)
+
+		_, resp, err := client.Client.AccessKeyAPI.UpdateKey(ctx).Id(key.AccessKeyId).UpdateKeyRequestBody(*updateBody).Execute()
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to update key permissions: %w", err))
+		}
+		defer func() {
+			if resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		}()
 	}
 	if key.SecretAccessKey.IsSet() {
 		secret := key.SecretAccessKey.Get()
@@ -94,27 +117,58 @@ func resourceGarageKeyRead(ctx context.Context, d *schema.ResourceData, m interf
 	if err := d.Set("name", key.Name); err != nil {
 		return diag.FromErr(err)
 	}
+	if err := d.Set("allow_create_bucket", key.Permissions.GetCreateBucket()); err != nil {
+		return diag.FromErr(err)
+	}
 	// Note: secret_access_key is not available on read, only on create
 
 	return nil
 }
 
 func resourceGarageKeyUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	// Garage doesn't support updating key names, so we recreate if name changes
+	client := m.(*GarageClient)
+	keyID := d.Id()
+
+	updateBody := garage.NewUpdateKeyRequestBody()
+
 	if d.HasChange("name") {
-		// Delete and recreate
-		diags := resourceGarageKeyDelete(ctx, d, m)
-		if diags.HasError() {
-			return diags
-		}
-		return resourceGarageKeyCreate(ctx, d, m)
+		name := d.Get("name").(string)
+		updateBody.SetName(name)
 	}
-	return nil
+	if d.HasChange("allow_create_bucket") {
+		allow := d.Get("allow_create_bucket").(bool)
+		perm := garage.NewKeyPerm()
+		perm.SetCreateBucket(allow)
+		updateBody.SetAllow(*perm)
+	}
+
+	_, resp, err := client.Client.AccessKeyAPI.UpdateKey(ctx).Id(keyID).UpdateKeyRequestBody(*updateBody).Execute()
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to update key: %w", err))
+	}
+	defer func() {
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	return resourceGarageKeyRead(ctx, d, m)
 }
 
 func resourceGarageKeyDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	// Note: Garage API doesn't have a delete key endpoint in v1
-	// We'll just remove from state
+	client := m.(*GarageClient)
+	keyID := d.Id()
+
+	resp, err := client.Client.AccessKeyAPI.DeleteKey(ctx).Id(keyID).Execute()
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to delete key: %w", err))
+	}
+	defer func() {
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
 	d.SetId("")
 	return nil
 }
