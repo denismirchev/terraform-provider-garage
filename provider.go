@@ -30,9 +30,18 @@ func Provider() *schema.Provider {
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"garage_key":        resourceGarageKey(),
-			"garage_bucket":     resourceGarageBucket(),
-			"garage_bucket_key": resourceGarageBucketKey(),
+			"garage_key":          resourceGarageKey(),
+			"garage_bucket":       resourceGarageBucket(),
+			"garage_bucket_key":   resourceGarageBucketKey(),
+			"garage_bucket_alias": resourceGarageBucketAlias(),
+		},
+		DataSourcesMap: map[string]*schema.Resource{
+			"garage_key":            dataSourceGarageKey(),
+			"garage_keys":           dataSourceGarageKeys(),
+			"garage_bucket":         dataSourceGarageBucket(),
+			"garage_buckets":        dataSourceGarageBuckets(),
+			"garage_cluster_status": dataSourceGarageClusterStatus(),
+			"garage_cluster_health": dataSourceGarageClusterHealth(),
 		},
 		ConfigureContextFunc: providerConfigure,
 	}
