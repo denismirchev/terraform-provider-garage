@@ -168,6 +168,10 @@ func resourceGarageBucketKeyDelete(ctx context.Context, d *schema.ResourceData, 
 
 	_, resp, err := client.Client.PermissionAPI.DenyBucketKey(ctx).Body(*updateReq).Execute()
 	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(fmt.Errorf("failed to remove bucket key permissions: %w", err))
 	}
 	defer func() {
