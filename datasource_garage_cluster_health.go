@@ -8,8 +8,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-var _ = dataSourceGarageClusterHealth
-
 func dataSourceGarageClusterHealth() *schema.Resource {
 	return &schema.Resource{
 		ReadContext: dataSourceGarageClusterHealthRead,
@@ -58,7 +56,7 @@ func dataSourceGarageClusterHealth() *schema.Resource {
 	}
 }
 
-func dataSourceGarageClusterHealthRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+func dataSourceGarageClusterHealthRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 
 	health, resp, err := client.Client.ClusterAPI.GetClusterHealth(ctx).Execute()
@@ -71,7 +69,7 @@ func dataSourceGarageClusterHealthRead(ctx context.Context, d *schema.ResourceDa
 		}
 	}()
 
-	vals := map[string]any{
+	vals := map[string]interface{}{
 		"status":            health.GetStatus(),
 		"connected_nodes":   int(health.GetConnectedNodes()),
 		"known_nodes":       int(health.GetKnownNodes()),
