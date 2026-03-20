@@ -46,6 +46,51 @@ func resourceGarageBucket() *schema.Resource {
 				Optional:    true,
 				Description: "Number of days after which objects in this bucket will be automatically deleted. Set to 0 to disable expiration.",
 			},
+			"website_config": {
+				Type:        schema.TypeList,
+				MaxItems:    1,
+				Optional:    true,
+				Description: "Website access configuration for the bucket",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"enabled": {
+							Type:        schema.TypeBool,
+							Required:    true,
+							Description: "Whether website access is enabled",
+						},
+						"index_document": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: "Index document for website access (required when enabled)",
+						},
+						"error_document": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: "Error document for website access",
+						},
+					},
+				},
+			},
+			"quotas": {
+				Type:        schema.TypeList,
+				MaxItems:    1,
+				Optional:    true,
+				Description: "Quotas for the bucket",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"max_size": {
+							Type:        schema.TypeInt,
+							Optional:    true,
+							Description: "Maximum bucket size in bytes",
+						},
+						"max_objects": {
+							Type:        schema.TypeInt,
+							Optional:    true,
+							Description: "Maximum number of objects",
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -93,6 +138,53 @@ func resourceGarageBucketCreate(ctx context.Context, d *schema.ResourceData, m i
 		if err := d.Set("expiration_days", expirationDays.(int)); err != nil {
 			return diag.FromErr(err)
 		}
+	}
+
+	if wc, ok := d.GetOk("website_config"); ok && len(wc.([]interface{})) > 0 {
+		wcMap := wc.([]interface{})[0].(map[string]interface{})
+		enabled := wcMap["enabled"].(bool)
+		websiteAccess := garage.NewUpdateBucketWebsiteAccess(enabled)
+		if idx := wcMap["index_document"].(string); idx != "" {
+			websiteAccess.SetIndexDocument(idx)
+		}
+		if errDoc := wcMap["error_document"].(string); errDoc != "" {
+			websiteAccess.SetErrorDocument(errDoc)
+		}
+		updateBody := garage.NewUpdateBucketRequestBody()
+		updateBody.SetWebsiteAccess(*websiteAccess)
+
+		_, updateResp, err := client.Client.BucketAPI.UpdateBucket(ctx).Id(bucket.Id).UpdateBucketRequestBody(*updateBody).Execute()
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to set website config: %w", err))
+		}
+		defer func() {
+			if updateResp.Body != nil {
+				_ = updateResp.Body.Close()
+			}
+		}()
+	}
+
+	if q, ok := d.GetOk("quotas"); ok && len(q.([]interface{})) > 0 {
+		qMap := q.([]interface{})[0].(map[string]interface{})
+		quotas := garage.NewApiBucketQuotas()
+		if maxSz := qMap["max_size"].(int); maxSz > 0 {
+			quotas.SetMaxSize(int64(maxSz))
+		}
+		if maxObj := qMap["max_objects"].(int); maxObj > 0 {
+			quotas.SetMaxObjects(int64(maxObj))
+		}
+		updateBody := garage.NewUpdateBucketRequestBody()
+		updateBody.SetQuotas(*quotas)
+
+		_, updateResp, err := client.Client.BucketAPI.UpdateBucket(ctx).Id(bucket.Id).UpdateBucketRequestBody(*updateBody).Execute()
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to set quotas: %w", err))
+		}
+		defer func() {
+			if updateResp.Body != nil {
+				_ = updateResp.Body.Close()
+			}
+		}()
 	}
 
 	return nil
@@ -144,6 +236,26 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 		}
 	}
 
+	websiteConfig := bucket.GetWebsiteConfig()
+	if err := d.Set("website_config", []map[string]interface{}{
+		{
+			"enabled":        bucket.WebsiteAccess,
+			"index_document": (&websiteConfig).GetIndexDocument(),
+			"error_document": (&websiteConfig).GetErrorDocument(),
+		},
+	}); err != nil {
+		return diag.FromErr(err)
+	}
+
+	if err := d.Set("quotas", []map[string]interface{}{
+		{
+			"max_size":    int(bucket.Quotas.GetMaxSize()),
+			"max_objects": int(bucket.Quotas.GetMaxObjects()),
+		},
+	}); err != nil {
+		return diag.FromErr(err)
+	}
+
 	return nil
 }
 
@@ -166,12 +278,74 @@ func resourceGarageBucketUpdate(ctx context.Context, d *schema.ResourceData, m i
 		}
 	}
 
+	if d.HasChange("website_config") {
+		websiteAccess := garage.NewUpdateBucketWebsiteAccess(false)
+		if wc := d.Get("website_config").([]interface{}); len(wc) > 0 {
+			wcMap := wc[0].(map[string]interface{})
+			websiteAccess = garage.NewUpdateBucketWebsiteAccess(wcMap["enabled"].(bool))
+			if idx := wcMap["index_document"].(string); idx != "" {
+				websiteAccess.SetIndexDocument(idx)
+			}
+			if errDoc := wcMap["error_document"].(string); errDoc != "" {
+				websiteAccess.SetErrorDocument(errDoc)
+			}
+		}
+		updateBody := garage.NewUpdateBucketRequestBody()
+		updateBody.SetWebsiteAccess(*websiteAccess)
+
+		_, resp, err := client.Client.BucketAPI.UpdateBucket(ctx).Id(bucketID).UpdateBucketRequestBody(*updateBody).Execute()
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to update website config: %w", err))
+		}
+		defer func() {
+			if resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		}()
+	}
+
+	if d.HasChange("quotas") {
+		quotas := garage.NewApiBucketQuotas()
+		if q := d.Get("quotas").([]interface{}); len(q) > 0 {
+			qMap := q[0].(map[string]interface{})
+			if maxSz := qMap["max_size"].(int); maxSz > 0 {
+				quotas.SetMaxSize(int64(maxSz))
+			}
+			if maxObj := qMap["max_objects"].(int); maxObj > 0 {
+				quotas.SetMaxObjects(int64(maxObj))
+			}
+		}
+		updateBody := garage.NewUpdateBucketRequestBody()
+		updateBody.SetQuotas(*quotas)
+
+		_, resp, err := client.Client.BucketAPI.UpdateBucket(ctx).Id(bucketID).UpdateBucketRequestBody(*updateBody).Execute()
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to update quotas: %w", err))
+		}
+		defer func() {
+			if resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		}()
+	}
+
 	return resourceGarageBucketRead(ctx, d, m)
 }
 
 func resourceGarageBucketDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	// Note: Garage API v1 doesn't have a delete bucket endpoint
-	// We'll just remove from state
+	client := m.(*GarageClient)
+	bucketID := d.Id()
+
+	resp, err := client.Client.BucketAPI.DeleteBucket(ctx).Id(bucketID).Execute()
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to delete bucket: %w", err))
+	}
+	defer func() {
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
 	d.SetId("")
 	return nil
 }
