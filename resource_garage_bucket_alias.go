@@ -11,8 +11,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-var _ = resourceGarageBucketAlias
-
 func resourceGarageBucketAlias() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourceGarageBucketAliasCreate,
@@ -42,7 +40,7 @@ func resourceGarageBucketAlias() *schema.Resource {
 	}
 }
 
-func resourceGarageBucketAliasCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+func resourceGarageBucketAliasCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 	bucketID := d.Get("bucket_id").(string)
 	alias := d.Get("alias").(string)
@@ -65,7 +63,7 @@ func resourceGarageBucketAliasCreate(ctx context.Context, d *schema.ResourceData
 	return resourceGarageBucketAliasRead(ctx, d, m)
 }
 
-func resourceGarageBucketAliasRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+func resourceGarageBucketAliasRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 	bucketID := d.Get("bucket_id").(string)
 	alias := d.Get("alias").(string)
@@ -124,7 +122,7 @@ func resourceGarageBucketAliasRead(ctx context.Context, d *schema.ResourceData, 
 	return nil
 }
 
-func resourceGarageBucketAliasDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+func resourceGarageBucketAliasDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 	bucketID := d.Get("bucket_id").(string)
 	alias := d.Get("alias").(string)
@@ -134,6 +132,10 @@ func resourceGarageBucketAliasDelete(ctx context.Context, d *schema.ResourceData
 
 	_, resp, err := client.Client.BucketAliasAPI.RemoveBucketAlias(ctx).BucketAliasEnum(aliasEnum).Execute()
 	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(fmt.Errorf("failed to remove bucket alias: %w", err))
 	}
 	defer func() {

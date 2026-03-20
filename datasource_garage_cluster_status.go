@@ -8,8 +8,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-var _ = dataSourceGarageClusterStatus
-
 func dataSourceGarageClusterStatus() *schema.Resource {
 	return &schema.Resource{
 		ReadContext: dataSourceGarageClusterStatusRead,
@@ -57,7 +55,7 @@ func dataSourceGarageClusterStatus() *schema.Resource {
 	}
 }
 
-func dataSourceGarageClusterStatusRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
+func dataSourceGarageClusterStatusRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 
 	status, resp, err := client.Client.ClusterAPI.GetClusterStatus(ctx).Execute()
@@ -75,16 +73,16 @@ func dataSourceGarageClusterStatusRead(ctx context.Context, d *schema.ResourceDa
 	}
 
 	nodesResp := status.GetNodes()
-	nodes := make([]map[string]any, 0, len(nodesResp))
+	nodes := make([]map[string]interface{}, 0, len(nodesResp))
 	for _, n := range nodesResp {
 		role, hasRole := n.GetRoleOk()
 
-		tags := []any{}
+		tags := []interface{}{}
 		zone := ""
 		capacity := 0
 		if hasRole && role != nil {
 			roleTags := role.GetTags()
-			tags = make([]any, len(roleTags))
+			tags = make([]interface{}, len(roleTags))
 			for i, t := range roleTags {
 				tags[i] = t
 			}
@@ -92,7 +90,7 @@ func dataSourceGarageClusterStatusRead(ctx context.Context, d *schema.ResourceDa
 			capacity = int(role.GetCapacity())
 		}
 
-		nodeMap := map[string]any{
+		nodeMap := map[string]interface{}{
 			"id":                 n.GetId(),
 			"zone":               zone,
 			"capacity":           capacity,
