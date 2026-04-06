@@ -6,6 +6,11 @@ A lightweight Terraform provider for Garage storage using the v1 admin API.
 
 ## Features
 
+## Compatibility
+
+- Garage Admin API: `v2.x` (tested with `dxflrs/garage:v2.1.0` and `dxflrs/garage:v2.2.0`)
+- Garage `v1.x` is not supported by this provider version (it targets `/v2/*` admin endpoints)
+
 ### Resources
 
 - **garage_key**: Create and manage access keys (with bucket creation permission support)
@@ -71,6 +76,14 @@ resource "garage_bucket_alias" "loki_local" {
   access_key_id = garage_key.loki_key.access_key_id
 }
 
+# Local alias equivalent to:
+# /garage bucket alias --local <bucket> <key> firmware
+resource "garage_bucket_alias" "firmware" {
+  bucket_id     = garage_bucket.loki.id
+  alias         = "firmware"
+  access_key_id = garage_key.loki_key.access_key_id
+}
+
 resource "garage_bucket_key" "loki_access" {
   bucket_id     = garage_bucket.loki.id
   access_key_id = garage_key.loki_key.access_key_id
@@ -84,6 +97,39 @@ data "garage_cluster_status" "this" {}
 data "garage_cluster_health" "this" {}
 
 data "garage_keys" "all" {}
+```
+
+## Tenant bootstrap (OpenTofu/Terraform)
+
+This provider supports the Garage part of tenant setup (key + bucket + key permissions + local alias):
+
+```hcl
+variable "tenant_slug" {
+  type = string
+}
+
+resource "garage_key" "tenant" {
+  name                = var.tenant_slug
+  allow_create_bucket = true
+}
+
+resource "garage_bucket" "tenant" {
+  global_alias = var.tenant_slug
+}
+
+resource "garage_bucket_key" "tenant" {
+  bucket_id     = garage_bucket.tenant.id
+  access_key_id = garage_key.tenant.access_key_id
+  read          = true
+  write         = true
+  owner         = true
+}
+
+resource "garage_bucket_alias" "firmware" {
+  bucket_id     = garage_bucket.tenant.id
+  alias         = "firmware"
+  access_key_id = garage_key.tenant.access_key_id
+}
 ```
 
 ## Resources
@@ -386,4 +432,3 @@ make clean
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-

@@ -326,18 +326,20 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 		}
 	}
 
-	// Read expiration policy if it exists
-	expirationDays, err := getBucketLifecyclePolicy(ctx, client, bucket.Id)
-	if err != nil {
-		return diag.FromErr(fmt.Errorf("failed to read expiration policy: %w", err))
-	}
-	if expirationDays > 0 {
-		if err := d.Set("expiration_days", expirationDays); err != nil {
-			return diag.FromErr(err)
+	if _, configured := d.GetOk("expiration_days"); configured {
+		// Read expiration policy only when this attribute is managed in configuration/state.
+		expirationDays, err := getBucketLifecyclePolicy(ctx, client, bucket.Id)
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to read expiration policy: %w", err))
 		}
-	} else {
-		if err := d.Set("expiration_days", 0); err != nil {
-			return diag.FromErr(err)
+		if expirationDays > 0 {
+			if err := d.Set("expiration_days", expirationDays); err != nil {
+				return diag.FromErr(err)
+			}
+		} else {
+			if err := d.Set("expiration_days", 0); err != nil {
+				return diag.FromErr(err)
+			}
 		}
 	}
 
@@ -673,7 +675,7 @@ func getBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 		}
 	}()
 
-	if resp.StatusCode == http.StatusNotFound {
+	if resp.StatusCode == http.StatusNotFound || isLifecycleUnsupportedStatus(resp.StatusCode) {
 		return 0, nil // No lifecycle policy set
 	}
 
@@ -743,7 +745,7 @@ func deleteBucketLifecyclePolicy(ctx context.Context, client *GarageClient, buck
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound && !isLifecycleUnsupportedStatus(resp.StatusCode) {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
@@ -760,4 +762,11 @@ func replacePort(host string, newPort int) string {
 		}
 	}
 	return host + ":" + strconv.Itoa(newPort)
+}
+
+func isLifecycleUnsupportedStatus(statusCode int) bool {
+	return statusCode == http.StatusBadRequest ||
+		statusCode == http.StatusForbidden ||
+		statusCode == http.StatusMethodNotAllowed ||
+		statusCode == http.StatusNotImplemented
 }
